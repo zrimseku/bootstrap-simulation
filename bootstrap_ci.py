@@ -240,11 +240,10 @@ class Bootstrap:
 
         elif method == 'double-std':
             nested_btsp_values = self.nested_bootstrap(self.b)      # functional values B x B_inner
-            means_inner = np.mean(nested_btsp_values, axis=1)
             stds_inner = np.std(nested_btsp_values, axis=1)
-            ahs = norm.cdf(self.original_statistic_value, loc=means_inner, scale=stds_inner)
+            ahs = norm.cdf(self.original_statistic_value, loc=self.statistic_values, scale=stds_inner)
             calibrated_alphas = np.quantile(ahs, quantiles, method=quantile_type)
-            return norm.ppf(calibrated_alphas, loc=np.mean(self.statistic_values), scale=np.std(self.statistic_values))
+            return norm.ppf(calibrated_alphas, loc=self.original_statistic_value, scale=np.std(self.statistic_values))
 
         else:
             raise ValueError(f'This method is not supported, choose between {self.implemented_methods}.')

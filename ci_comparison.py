@@ -645,12 +645,12 @@ if __name__ == '__main__':
 
     # ns = [4, 8, 16, 32, 64, 128, 256]
     ns = [4, 8, 16, 32]
-    Bs = [10, 100, 1000]
+    Bs = [1000]
 
     np.random.seed(seed)
-    repetitions = 1000
+    repetitions = 10000
     run_comparison(dgps, statistics, Bs, methods, alphas, repetitions, ns, nr_processes=24, dont_repeat=True,
-                   append=False, sampling='nonparametric')
+                   append=True, sampling='nonparametric')
 
     # # hierarchical experiments
     # leaves = [2, 4, 8, 16, 32]
