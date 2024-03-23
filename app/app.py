@@ -8,44 +8,44 @@ import seaborn as sns
 from matplotlib import pyplot as plt
 
 from shiny import App, Inputs, Outputs, Session, reactive, render, req, ui
+import pyreadr
 
-import rpy2.robjects as robjects
-from rpy2.robjects import pandas2ri
+
+
 
 sns.set_theme()
 
 # Load RDS file
-rds_file_path = Path(__file__).parent / "data_rds/"
-r_data1 = robjects.r['readRDS'](rds_file_path / "aggregated_one_sided.rds")
-r_data2 = robjects.r['readRDS'](rds_file_path / "aggregated_two_sided.rds")
+rds_file_path1 = Path(__file__).parent / "data_rds/aggregated_one_sided.rds"
+df1 = pyreadr.read_r(rds_file_path1)[None]
+rds_file_path2 = Path(__file__).parent / "data_rds/aggregated_two_sided.rds/"
+df2 = pyreadr.read_r(rds_file_path2)[None]
 
-# Convert R data to Python object
-pandas2ri.activate()
-py_data1 = pandas2ri.ri2py(r_data1)
-py_data2 = pandas2ri.ri2py(r_data2)
-pandas2ri.deactivate()
-
-# Convert Python object to DataFrame
-df1 = pd.DataFrame(py_data1)
-df2 = pd.DataFrame(py_data2)
-
-df = pd.read_csv(Path(__file__).parent / "coverage.csv", na_values="NA")
-df = df[df['B'] == 1000]
+# df = pd.read_csv(Path(__file__).parent / "coverage.csv", na_values="NA")
+df1 = df1[df1['B'] == 1000]
+df2 = df2[df2['B'] == 1000]
+repetitions = 10000
+df1['repetitions'] = repetitions
+df2['repetitions'] = repetitions
 selectable_cols = ['Confidence level', 'Statistic', 'Distribution']
 sel_cols_x = ['Statistic', 'Distribution', "No X grid"]
 sel_cols_y = selectable_cols + ["No Y grid"]            # Confidence level can't be on x axis because of scales
-methods = df["method"].unique().tolist()
-alphas1 = df["alpha"].unique().tolist()
-alphas1.sort()
-alphas2 = [round(b - a, 5) for a, b in zip(alphas1[:len(alphas1)//2], alphas1[len(alphas1)//2:][::-1])]
-statistics = df["statistic"].unique().tolist()
-distributions = df["dgp"].unique().tolist()
-
+methods = df1["method"].unique().tolist()
+alphas1 = df1["nominal_coverage"].unique().tolist()
+alphas2 = df2["nominal_coverage"].unique().tolist()
+statistics = df1["functional"].unique().tolist()
+distributions = df1["dgp"].unique().tolist()
 
 app_ui = ui.page_sidebar(
     ui.sidebar(
         ui.input_action_button("render_btn", "Render plot with parameters selected below"),
-        # ui.input_slider("width_slider", "Width slider", min=1, max=3000, value=1000),
+        ui.panel_conditional(
+            "input.sided === '1'", ui.input_radio_buttons("criteria", "Criteria to draw",
+                                                          {"coverage": "Coverage",
+                                                           "abs_dist_to_exact": "Distance from exact"})),
+        ui.panel_conditional(
+            "input.sided === '2'", ui.input_radio_buttons("criteria2", "Criteria to draw",
+                                                          {"coverage": "Coverage", "length": "Length"})),
         ui.input_radio_buttons("sided", "Confidence intervals", {"1": "One-sided", "2": "Two-sided"}),
         ui.input_selectize(
             "xgrid", "X grid", sel_cols_x, selected="No X grid"
@@ -79,15 +79,15 @@ app_ui = ui.page_sidebar(
             )),
         ui.panel_conditional(
             "input.xgrid != 'Confidence level' & input.ygrid != 'Confidence level'", ui.input_selectize(
-            "alpha", "Confidence level", alphas1, selected=0.95
+            "alpha", "Confidence level", alphas1, selected='0.05'
             )),
         ui.panel_conditional(
             "input.xgrid != 'Statistic' & input.ygrid != 'Statistic'", ui.input_selectize(
-                "statistic", "Statistic", statistics, selected=statistics[0]
+                "statistic", "Statistic", statistics, selected='mean'
             )),
         ui.panel_conditional(
             "input.xgrid != 'Distribution' & input.ygrid != 'Distribution'", ui.input_selectize(
-            "distribution", "Distribution", distributions, selected=distributions[0]
+            "distribution", "Distribution", distributions, selected='DGPNorm_0_1'
             )),
         ui.input_checkbox_group(
             "methods", "Filter by methods", methods, selected=methods
@@ -103,11 +103,8 @@ app_ui = ui.page_sidebar(
 )
 
 
-def compare_cov_dis_grid(df=None, comparing='coverage', filter_by={'alpha': [0.95]}, x='n', row='statistic', col='dgp',
-                         hue='method', save_add=None, title=None, ci=95, scale='linear', folder_add='', subfolder='',
-                         set_ylim=False, colors=None):
-    if df is None:
-        df = pd.read_csv(f'results{folder_add}/{comparing}.csv')
+def compare_cov_dis_grid(df, comparing='coverage', filter_by={'nominal_coverage': [0.95]}, x='n', row='functional',
+                         col='dgp', hue='method', title=None, ci=95, scale='linear', set_ylim=False, colors=None):
 
     for key in filter_by.keys():
         df = df[df[key].isin(filter_by[key])]
@@ -130,19 +127,14 @@ def compare_cov_dis_grid(df=None, comparing='coverage', filter_by={'alpha': [0.9
         g.map(sns.boxplot, x, comparing, hue, hue_order=df[hue].unique(), fliersize=0,
               whis=[(100 - ci) / 2, 50 + ci / 2],
               palette=colors)
-        ylim = np.nanquantile(df['distance'], (0.01, 0.99))
+        ylim = np.nanquantile(df['abs_dist_to_exact'], (0.01, 0.99))
         g.set(ylim=ylim)
 
         for axs in g.axes:
             for ax in axs:
                 ax.axhline(0, linestyle='--', color='gray')
 
-    # g.add_legend(title='method')
-    # sns.move_legend(g, 'center left', bbox_to_anchor=(.9, 0.5), borderaxespad=1)
-
     plt.legend(loc='center left', bbox_to_anchor=(1.1, 0.5))
-    # plt.tight_layout()
-
 
     if title is not None:
         g.fig.subplots_adjust(top=0.95)
@@ -183,7 +175,7 @@ def plot_coverage_bars(data, **kwargs):
     for p in bar_pos[:-1]:
         plt.axvline(p + 0.5, ls=':', alpha=0.2)
 
-    a = data['alpha'].values[0]
+    a = data['nominal_coverage'].values[0]
     if a > 0.9:
         if scale == 'logit':
             ylim = (0.8, 0.99)
@@ -214,7 +206,7 @@ def server(input: Inputs):
     @reactive.effect()
     def update_choices():
         """Updates possible choices based on selected values."""
-        # setting correct alphas for one or two-sided intervals
+        # setting correct nominal_coverages for one or two-sided intervals
         if input.sided() == '1':
             ui.update_selectize('alpha', choices=alphas1)
             selected_alphas_x = input.alphas_x()
@@ -229,14 +221,14 @@ def server(input: Inputs):
             ui.update_checkbox_group('alphas_y', choices=alphas2,
                                      selected=[str(a) for a in alphas2 if str(a) in input.alphas_y()])
 
-        bootstrap_methods = ['percentile', 'basic', 'bca', 'bc', 'standard', 'smoothed', 'double', 'studentized']
-        other_methods = {'mean': ['wilcoxon', 'ttest'], 'std': ['chi_sq'],
-                         'median': ['wilcoxon', 'ci_quant_param', 'ci_quant_nonparam', 'maritz-jarrett'],
-                         'percentile_5': ['ci_quant_param', 'ci_quant_nonparam', 'maritz-jarrett'],
-                         'percentile_95': ['ci_quant_param', 'ci_quant_nonparam', 'maritz-jarrett'],
-                         'corr': ['ci_corr_pearson']}
+        bootstrap_methods = ['PB', 'BB', 'BCa', 'BC', 'B-n', 'SB', 'DB', 'B-t']
+        other_methods = {'mean': ['wilcoxon', 't-test'], 'std': ['chi-sq'],
+                         'median': ['wilcoxon', 'q-par', 'q-nonpar', 'm-j'],
+                         'Q(0.05)': ['q-par', 'q-nonpar', 'm-j'],
+                         'Q(0.95)': ['q-par', 'q-nonpar', 'm-j'],
+                         'corr': ['fisher']}
 
-        # setting correct methods for each statistic
+        # setting correct methods for each functional
         if 'Statistic' not in [input.xgrid(), input.ygrid()]:
 
             possible_methods = bootstrap_methods + other_methods[input.statistic()]
@@ -275,38 +267,39 @@ def server(input: Inputs):
         """Returns a Pandas data frame that includes only the desired rows"""
         # This calculation "req"uires that at least one species is selected
         req(len(input.methods()) > 0)
-
-        fil_df = df.copy()
-        if 'Distribution' not in [input.xgrid(), input.ygrid()]:
-            fil_df = fil_df[(fil_df['dgp'] == input.distribution())]
-        if 'Statistic' not in [input.xgrid(), input.ygrid()]:
-            fil_df = fil_df[(fil_df['statistic'] == input.statistic())]
-
-        if input.sided() == '1':
-            if 'Confidence level' not in [input.xgrid(), input.ygrid()]:
-                fil_df = fil_df[(fil_df['alpha'] == float(input.alpha()))]
-
-        else:
-            al = round((1 - float(input.alpha())) / 2, 5)
-            au = 1 - al
-            if 'Confidence level' not in [input.xgrid(), input.ygrid()]:
-                fil_df = fil_df[fil_df['alpha'] == au]
-
-            fil_df2 = df.copy()
+        fil_dfs = []
+        for df in [df1, df2]:
+            fil_df = df.copy()
             if 'Distribution' not in [input.xgrid(), input.ygrid()]:
-                fil_df2 = fil_df2[(fil_df2['dgp'] == input.distribution())]
+                fil_df = fil_df[(fil_df['dgp'] == input.distribution())]
             if 'Statistic' not in [input.xgrid(), input.ygrid()]:
-                fil_df2 = fil_df2[(fil_df2['statistic'] == input.statistic())]
-            if 'Confidence level' not in [input.xgrid(), input.ygrid()]:
-                fil_df2 = fil_df2[fil_df2['alpha'] == al]
+                fil_df = fil_df[(fil_df['functional'] == input.statistic())]
 
-            # merge dataframes to be able to subtract coverages of same experiments
-            fil_df = pd.merge(fil_df, fil_df2, on=['method', 'dgp', 'statistic', 'n', 'B', 'repetitions'],
-                              suffixes=('_au', '_al'))
-            fil_df['coverage'] = fil_df['coverage_au'] - fil_df['coverage_al']
-            fil_df['alpha'] = fil_df['alpha_au'] - fil_df['alpha_al']
+            if input.sided() == '1':
+                if 'Confidence level' not in [input.xgrid(), input.ygrid()]:
+                    fil_df = fil_df[(fil_df['nominal_coverage'] == float(input.alpha()))]
 
-        return fil_df
+            else:
+                al = round((1 - float(input.alpha())) / 2, 5)
+                au = 1 - al
+                if 'Confidence level' not in [input.xgrid(), input.ygrid()]:
+                    fil_df = fil_df[fil_df['nominal_coverage'] == au]
+
+                fil_df2 = df.copy()
+                if 'Distribution' not in [input.xgrid(), input.ygrid()]:
+                    fil_df2 = fil_df2[(fil_df2['dgp'] == input.distribution())]
+                if 'Statistic' not in [input.xgrid(), input.ygrid()]:
+                    fil_df2 = fil_df2[(fil_df2['functional'] == input.statistic())]
+                if 'Confidence level' not in [input.xgrid(), input.ygrid()]:
+                    fil_df2 = fil_df2[fil_df2['nominal_coverage'] == al]
+
+                # merge dataframes to be able to subtract coverages of same experiments
+                fil_df = pd.merge(fil_df, fil_df2, on=['method', 'dgp', 'functional', 'n', 'B', 'repetitions'],
+                                  suffixes=('_au', '_al'))
+                fil_df['coverage'] = fil_df['coverage_au'] - fil_df['coverage_al']
+                fil_df['nominal_coverage'] = fil_df['nominal_coverage_au'] - fil_df['nominal_coverage_al']
+            fil_dfs.append(fil_df)
+        return fil_dfs
 
     @render.ui
     @reactive.event(input.render_btn)
@@ -345,7 +338,9 @@ def server(input: Inputs):
             # The plotting function to use depends on whether we are plotting grids
             no_grids = input.xgrid() == "No X grid" and input.ygrid() == "No Y grid"
 
-            current_df = filtered_df()
+            current_df1, current_df2 = filtered_df()
+
+            current_df = current_df1 if input.sided() == '1' else current_df2
             current_methods = [m for m in input.methods() if m in current_df['method'].unique()]
 
             if no_grids:
@@ -368,33 +363,30 @@ def server(input: Inputs):
 
             else:
                 row_col_dict = dict(zip(selectable_cols + ["No X grid", "No Y grid"],
-                                        ['alpha', 'statistic', 'dgp', None, None]))
+                                        ['nominal_coverage', 'functional', 'dgp', None, None]))
 
                 filters = {'method': input.methods()}
                 if 'Confidence level' == input.xgrid():
-                    filters['alpha'] = [float(a) for a in input.alphas_x()]
+                    filters['nominal_coverage'] = [float(a) for a in input.alphas_x()]
                 elif 'Confidence level' == input.ygrid():
-                    filters['alpha'] = [float(a) for a in input.alphas_y()]
+                    filters['nominal_coverage'] = [float(a) for a in input.alphas_y()]
                 else:
-                    filters['alpha'] = [float(input.alpha())]
+                    filters['nominal_coverage'] = [float(input.alpha())]
                 if 'Statistic' in [input.xgrid(), input.ygrid()]:
-                    filters['statistic'] = input.statistics_x() if 'Statistic' == input.xgrid() else input.statistics_y()
+                    filters['functional'] = input.statistics_x() if 'Statistic' == input.xgrid() else input.statistics_y()
                 else:
-                    filters['statistic'] = [input.statistic()]
+                    filters['functional'] = [input.statistic()]
                 if 'Distribution' in [input.xgrid(), input.ygrid()]:
                     filters['dgp'] = input.distributions_x() if 'Distribution' == input.xgrid() else input.distributions_y()
                 else:
                     filters['dgp'] = [input.distribution()]
 
-                compare_cov_dis_grid(df=current_df, comparing='coverage', filter_by=filters, x='n',
+                comparing = input.criteria() if input.sided() == '1' else input.criteria2()
+                compare_cov_dis_grid(df=current_df, comparing=comparing, filter_by=filters, x='n',
                                      row=row_col_dict[input.ygrid()], col=row_col_dict[input.xgrid()],
-                                     hue='method', save_add=None, title=None, ci=95, scale='linear',
+                                     hue='method', title=None, ci=95, scale='linear',
                                      set_ylim=True, colors=None)
-
-                # plt.legend([], [], frameon=False)
-                # handles, labels = plt.gca().get_legend_handles_labels()
-                # plt.legend(handles, labels, loc='center left', title="Method", bbox_to_anchor=(1, 0.5))
 
 
 app = App(app_ui, server)
-# app.run()
+app.run()       # TODO comment!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!

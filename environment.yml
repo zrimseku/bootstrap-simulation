@@ -14,3 +14,8 @@ dependencies:
   - statsmodels=0.13.2
   - tqdm=4.64.0
   - rpy2=3.5.1
+  - shiny=0.8.1
+  - pip:
+      - bootstrap-ci==0.0.1
+      - shinylive==0.2.4
+      - pyreadr==0.5.0
