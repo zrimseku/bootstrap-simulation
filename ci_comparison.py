@@ -635,31 +635,29 @@ if __name__ == '__main__':
     seed = 0
     alphas = [0.025, 0.05, 0.25, 0.75, 0.95, 0.975]
 
-    # methods = ['percentile', 'basic', 'bca', 'bc', 'standard', 'smoothed', 'double', 'studentized']
-    methods = ['standard', 'double-std']
+    methods = ['percentile', 'basic', 'bca', 'bc', 'standard', 'smoothed', 'double', 'studentized']
 
     dgps = [DGPNorm(seed, 0, 1), DGPExp(seed, 1), DGPBeta(seed, 1, 1), DGPBeta(seed, 10, 2),
             DGPLaplace(seed, 0, 1), DGPLogNorm(seed, 0, 1),
             DGPBiNorm(seed, np.array([1, 1]), np.array([[2, 0.5], [0.5, 1]]))]
     statistics = [np.mean, np.median, np.std, percentile_5, percentile_95, corr]
 
-    # ns = [4, 8, 16, 32, 64, 128, 256]
-    ns = [4, 8, 16, 32]
-    Bs = [1000]
+    ns = [4, 8, 16, 32, 64, 128, 256]
+    Bs = [10, 100, 1000]
 
     np.random.seed(seed)
     repetitions = 10000
-    run_comparison(dgps, statistics, Bs, methods, alphas, repetitions, ns, nr_processes=24, dont_repeat=True,
+    run_comparison(dgps, statistics, Bs, methods, alphas, repetitions, ns, nr_processes=2, dont_repeat=True,
                    append=True, sampling='nonparametric')
 
-    # # hierarchical experiments
-    # leaves = [2, 4, 8, 16, 32]
-    # branches = [1, 3, 5, 7]
-    # stds = [0.1, 1, 10]
-    # levels = [2, 3, 4]
-    # dgps = [DGPRandEff(seed, 0, [s for l in range(n_lvl)]) for n_lvl in levels for s in stds]
-    #
-    # run_comparison(dgps, statistics, Bs, methods, alphas, repetitions, leaves=leaves, branches=branches,
-    #                nr_processes=24, dont_repeat=True, append=False, sampling='hierarchical')
+    # hierarchical experiments
+    leaves = [2, 4, 8, 16, 32]
+    branches = [1, 3, 5, 7]
+    stds = [0.1, 1, 10]
+    levels = [2, 3, 4]
+    dgps = [DGPRandEff(seed, 0, [s for l in range(n_lvl)]) for n_lvl in levels for s in stds]
+
+    run_comparison(dgps, statistics, Bs, methods, alphas, repetitions, leaves=leaves, branches=branches,
+                   nr_processes=24, dont_repeat=True, append=False, sampling='hierarchical')
 
 
