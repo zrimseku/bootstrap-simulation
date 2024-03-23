@@ -7,17 +7,12 @@ import seaborn as sns
 from matplotlib import pyplot as plt
 
 from shiny import App, Inputs, reactive, render, req, ui
-import pyreadr
 
 sns.set_theme()
 
-# Load RDS file
-rds_file_path1 = Path(__file__).parent / "data_rds/aggregated_one_sided.rds"
-df1 = pyreadr.read_r(rds_file_path1)[None]
-rds_file_path2 = Path(__file__).parent / "data_rds/aggregated_two_sided.rds/"
-df2 = pyreadr.read_r(rds_file_path2)[None]
+df1 = pd.read_csv(Path(__file__).parent / "aggregated_one_sided.csv")
+df2 = pd.read_csv(Path(__file__).parent / "aggregated_two_sided.csv")
 
-# df = pd.read_csv(Path(__file__).parent / "coverage.csv", na_values="NA")
 df1 = df1[df1['B'] == 1000]
 df2 = df2[df2['B'] == 1000]
 repetitions = 10000
@@ -348,4 +343,5 @@ def server(input: Inputs):
 
 
 app = App(app_ui, server)
-app.run()       # TODO comment out!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+# app.run()
+# shinylive export app docs
