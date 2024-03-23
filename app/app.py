@@ -1,5 +1,4 @@
 import itertools
-import time
 from pathlib import Path
 import pandas as pd
 import numpy as np
@@ -7,11 +6,8 @@ import scipy
 import seaborn as sns
 from matplotlib import pyplot as plt
 
-from shiny import App, Inputs, Outputs, Session, reactive, render, req, ui
+from shiny import App, Inputs, reactive, render, req, ui
 import pyreadr
-
-
-
 
 sns.set_theme()
 
@@ -93,13 +89,9 @@ app_ui = ui.page_sidebar(
             "methods", "Filter by methods", methods, selected=methods
         ),
         ui.hr(),
-        # ui.input_switch("show_margins", "Show marginal plots", value=True),
     ),
     ui.output_ui("plot")
-    # ui.card(
-    # ui.page_fluid(
-    #     ui.output_plot("coverages", height="100%"),
-    # ),
+
 )
 
 
@@ -120,19 +112,10 @@ def compare_cov_dis_grid(df, comparing='coverage', filter_by={'nominal_coverage'
     g = sns.FacetGrid(df, row=row, col=col, margin_titles=True, sharex=True, sharey='row', palette=colors, aspect=2,
                       height=3, legend_out=True)
     g.figure.set_size_inches(10, 20)
-    if comparing == 'coverage':
-        g.map_dataframe(plot_coverage_bars, colors=colors, ci=ci, scale=scale, set_ylim=set_ylim,
-                        order=df[hue].unique(), hue=hue, x=x)
-    else:
-        g.map(sns.boxplot, x, comparing, hue, hue_order=df[hue].unique(), fliersize=0,
-              whis=[(100 - ci) / 2, 50 + ci / 2],
-              palette=colors)
-        ylim = np.nanquantile(df['abs_dist_to_exact'], (0.01, 0.99))
-        g.set(ylim=ylim)
 
-        for axs in g.axes:
-            for ax in axs:
-                ax.axhline(0, linestyle='--', color='gray')
+    g.map_dataframe(plot_coverage_bars, colors=colors, ci=ci, scale=scale, set_ylim=set_ylim,
+                    order=df[hue].unique(), hue=hue, x=x, comparing=comparing)
+
 
     plt.legend(loc='center left', bbox_to_anchor=(1.1, 0.5))
 
@@ -145,16 +128,10 @@ def plot_coverage_bars(data, **kwargs):
     colors = kwargs['colors']
     ci = kwargs['ci']
     scale = kwargs['scale']
+    comparing = kwargs['comparing']
 
-    if 'cov_kind' in kwargs:                # for the possibility of plotting variance coverage with it
-        cov_kind = kwargs['cov_kind']
-    else:
-        cov_kind = 'coverage'
-
-    data['ci'] = np.sqrt(data[cov_kind] * (1 - data[cov_kind]) / data['repetitions'])
-    if ci != 'se':
-        data['ci'] *= scipy.stats.norm.ppf(0.5 + ci / 200)
-    data['low'] = data[cov_kind] - data['ci']
+    data['ci'] = data[comparing + '_sd'] / np.sqrt(data['repetitions']) * scipy.stats.norm.ppf(0.5 + ci / 200)
+    data['low'] = data[comparing] - data['ci']
 
     n_levels = len(kwargs['order'])
     group_width = 0.8
@@ -168,7 +145,7 @@ def plot_coverage_bars(data, **kwargs):
         offset = bar_pos + offsets[i]
         if data_m['ci'].shape[0] == 0:
             continue
-        plt.bar(offset, data_m['ci'], bar_width, bottom=data_m[cov_kind], label=method, color=colors[method],
+        plt.bar(offset, data_m['ci'], bar_width, bottom=data_m[comparing], label=method, color=colors[method],
                 ec=colors[method])
         plt.bar(offset, data_m['ci'], bar_width, bottom=data_m['low'], color=colors[method], ec=colors[method])
 
@@ -176,28 +153,34 @@ def plot_coverage_bars(data, **kwargs):
         plt.axvline(p + 0.5, ls=':', alpha=0.2)
 
     a = data['nominal_coverage'].values[0]
-    if a > 0.9:
-        if scale == 'logit':
-            ylim = (0.8, 0.99)
+
+    if comparing == 'coverage':
+        if a > 0.9:
+            if scale == 'logit':
+                ylim = (0.8, 0.99)
+            else:
+                ylim = (0.8, 1)
+        elif a < 0.1:
+            ylim = (0, 0.2)
         else:
-            ylim = (0.8, 1)
-    elif a < 0.1:
-        ylim = (0, 0.2)
+            ylim = (a - 0.1, a + 0.1)
+
     else:
-        ylim = (a - 0.1, a + 0.1)
+        ylim = np.nanquantile(data[comparing], (0.01, 0.99))
 
     ax = plt.gca()
 
     ax.set_yscale(scale)
 
-    if kwargs['set_ylim']:
-        ax.set(ylim=ylim)
+    if comparing == 'coverage':
+        ax.axhline(a, linestyle='--', color='gray')
+        plt.yticks(list(plt.yticks()[0]) + [a])
 
-    ax.axhline(a, linestyle='--', color='gray')
-    plt.yticks(list(plt.yticks()[0]) + [a])
+        if kwargs['set_ylim']:
+            ax.set(ylim=ylim)
 
     ax.set_xlabel(kwargs['x'])
-    ax.set_ylabel(cov_kind)
+    ax.set_ylabel(comparing)
     plt.xticks(bar_pos, sorted(data[kwargs['x']].unique()))
 
 
@@ -268,38 +251,21 @@ def server(input: Inputs):
         # This calculation "req"uires that at least one species is selected
         req(len(input.methods()) > 0)
         fil_dfs = []
-        for df in [df1, df2]:
-            fil_df = df.copy()
-            if 'Distribution' not in [input.xgrid(), input.ygrid()]:
-                fil_df = fil_df[(fil_df['dgp'] == input.distribution())]
-            if 'Statistic' not in [input.xgrid(), input.ygrid()]:
-                fil_df = fil_df[(fil_df['functional'] == input.statistic())]
 
-            if input.sided() == '1':
-                if 'Confidence level' not in [input.xgrid(), input.ygrid()]:
-                    fil_df = fil_df[(fil_df['nominal_coverage'] == float(input.alpha()))]
+        if input.sided() == '1':
+            fil_df = df1.copy()
+        else:
+            fil_df = df2.copy()
+        if 'Distribution' not in [input.xgrid(), input.ygrid()]:
+            fil_df = fil_df[(fil_df['dgp'] == input.distribution())]
+        if 'Statistic' not in [input.xgrid(), input.ygrid()]:
+            fil_df = fil_df[(fil_df['functional'] == input.statistic())]
 
-            else:
-                al = round((1 - float(input.alpha())) / 2, 5)
-                au = 1 - al
-                if 'Confidence level' not in [input.xgrid(), input.ygrid()]:
-                    fil_df = fil_df[fil_df['nominal_coverage'] == au]
+        # if input.sided() == '1':
+        if 'Confidence level' not in [input.xgrid(), input.ygrid()]:
+            fil_df = fil_df[(fil_df['nominal_coverage'] == float(input.alpha()))]
 
-                fil_df2 = df.copy()
-                if 'Distribution' not in [input.xgrid(), input.ygrid()]:
-                    fil_df2 = fil_df2[(fil_df2['dgp'] == input.distribution())]
-                if 'Statistic' not in [input.xgrid(), input.ygrid()]:
-                    fil_df2 = fil_df2[(fil_df2['functional'] == input.statistic())]
-                if 'Confidence level' not in [input.xgrid(), input.ygrid()]:
-                    fil_df2 = fil_df2[fil_df2['nominal_coverage'] == al]
-
-                # merge dataframes to be able to subtract coverages of same experiments
-                fil_df = pd.merge(fil_df, fil_df2, on=['method', 'dgp', 'functional', 'n', 'B', 'repetitions'],
-                                  suffixes=('_au', '_al'))
-                fil_df['coverage'] = fil_df['coverage_au'] - fil_df['coverage_al']
-                fil_df['nominal_coverage'] = fil_df['nominal_coverage_au'] - fil_df['nominal_coverage_al']
-            fil_dfs.append(fil_df)
-        return fil_dfs
+        return fil_df
 
     @render.ui
     @reactive.event(input.render_btn)
@@ -331,17 +297,12 @@ def server(input: Inputs):
     def coverages():
         with reactive.isolate():
             """Generates a plot for Shiny to display to the user"""
-            # req(update_choices()) doesn't help (+ needs Effect to Calc)
-            # ne dela -> vse kar caka in se updejta gre na stack in se pol izrise. Pogruntat rabim kako lahko izrisem samo
-            # tazadn plot, ga klicem sele ko se do konca poupdajtajo zadeve
-
             # The plotting function to use depends on whether we are plotting grids
             no_grids = input.xgrid() == "No X grid" and input.ygrid() == "No Y grid"
 
-            current_df1, current_df2 = filtered_df()
-
-            current_df = current_df1 if input.sided() == '1' else current_df2
+            current_df = filtered_df()
             current_methods = [m for m in input.methods() if m in current_df['method'].unique()]
+            comparing = input.criteria() if input.sided() == '1' else input.criteria2()
 
             if no_grids:
 
@@ -355,8 +316,7 @@ def server(input: Inputs):
                 plt.figure(figsize=(10, 12))
 
                 plot_coverage_bars(data=current_df, colors=colors, ci=95, scale='linear', set_ylim=True,
-                                   order=current_methods, hue='method', x='n')
-                # plt.gca().yaxis.set_major_formatter(plt.FuncFormatter(lambda value, _: f'{value:.2f}'))
+                                   order=current_methods, hue='method', x='n', comparing=comparing)
 
                 handles, labels = plt.gca().get_legend_handles_labels()
                 plt.legend(handles, labels, loc='center left', title="Method", bbox_to_anchor=(1, 0.5))
@@ -381,7 +341,6 @@ def server(input: Inputs):
                 else:
                     filters['dgp'] = [input.distribution()]
 
-                comparing = input.criteria() if input.sided() == '1' else input.criteria2()
                 compare_cov_dis_grid(df=current_df, comparing=comparing, filter_by=filters, x='n',
                                      row=row_col_dict[input.ygrid()], col=row_col_dict[input.xgrid()],
                                      hue='method', title=None, ci=95, scale='linear',
@@ -389,4 +348,4 @@ def server(input: Inputs):
 
 
 app = App(app_ui, server)
-app.run()       # TODO comment!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+app.run()       # TODO comment out!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
