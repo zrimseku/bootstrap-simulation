@@ -7,7 +7,6 @@
 - [Methods](#methods)
 - [Results](#results)
 - [Reproducibility](#reproducibility)
-- [Additional results](#additional-results)
 
 # Abstract
 TODO
