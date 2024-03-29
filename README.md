@@ -1,11 +1,11 @@
 # bootstrap-simulation
 
-This repository contains the materials needed to reproduce the results from our paper **Quantifying Uncertainty: All We Need is the Bootstrap?** and the source code for the [results visualization app](https://zrimseku.github.io/bootstrap-simulation). The repository with [the source code for the bootstrap methods](https://github.com/zrimseku/bootstrap-ci).
+This repository contains the materials needed to reproduce the results from our paper **Quantifying Uncertainty: All We Need is the Bootstrap?** and the source code for the [results visualization app](https://zrimseku.github.io/bootstrap-simulation). The paper can be found [here](https://insert.link.when.available.com).
 
 **Abstract:** Standard errors, confidence intervals, hypothesis tests, and other quantifications of uncertainty are essential to statistical practice. However, they feature a plethora of different methods, mathematical formulas, and concepts. Could we not just replace them all with the general and relatively easy-to-understand non-parametric bootstrap? We contribute to answering this question with a review of related work and a simulation study of one and two-sided confidence intervals over several different sample sizes, confidence levels, data generating processes, and functionals. Results show that double bootstrap is the overall best method and a viable alternative to typically used approaches in all but the smallest sample sizes.
 
 ## Reproducibility
-If you want to reproduce our results, or are interested in adding new experiments, here are the instructions.
+If you want to reproduce our results, or are interested in adding new experiments, here are the instructions. Note that [the source code for the bootstrap methods](https://github.com/zrimseku/bootstrap-ci) is in a separate repository.
 
 ### Environment setup
 Clone this repository, go into `bootstrap-simulation` folder and prepare the environment:
