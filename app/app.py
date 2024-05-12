@@ -149,30 +149,34 @@ def plot_coverage_bars(data, **kwargs):
 
     a = data['nominal_coverage'].values[0]
 
-    if comparing == 'coverage':
-        if a > 0.9:
-            if scale == 'logit':
-                ylim = (0.8, 0.99)
-            else:
-                ylim = (0.8, 1)
-        elif a < 0.1:
-            ylim = (0, 0.2)
-        else:
-            ylim = (a - 0.1, a + 0.1)
-
-    else:
-        ylim = np.nanquantile(data[comparing], (0.01, 0.99))
-
     ax = plt.gca()
 
     ax.set_yscale(scale)
 
+    if kwargs['set_ylim']:
+        if comparing == 'abs_dist_to_exact':
+            data_bt = data[data['method'] == 'B-t']
+            data_not_bt = data[data['method'] != 'B-t']
+            if max(data_bt[comparing] + data_bt['ci']) > (max(data_not_bt[comparing] + data_not_bt['ci']) * 50):
+                ylim = [min(-0.01, min(data_not_bt['low'])), max(data_not_bt[comparing] + data_not_bt['ci']) * 1.05]
+            else:
+                ylim = [min(-0.01, min(data['low'])), max(data[comparing] + data['ci']) * 1.05]
+            ax.set(ylim=ylim)
+        elif comparing == 'coverage':
+            if a > 0.9:
+                if scale == 'logit':
+                    ylim = (0.8, 0.99)
+                else:
+                    ylim = (0.8, 1)
+            elif a < 0.1:
+                ylim = (0, 0.2)
+            else:
+                ylim = (a - 0.1, a + 0.1)
+            ax.set(ylim=ylim)
+
     if comparing == 'coverage':
         ax.axhline(a, linestyle='--', color='gray')
         plt.yticks(list(plt.yticks()[0]) + [a])
-
-        if kwargs['set_ylim']:
-            ax.set(ylim=ylim)
 
     ax.set_xlabel(kwargs['x'])
     ax.set_ylabel(comparing)
