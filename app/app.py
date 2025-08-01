@@ -204,7 +204,7 @@ def server(input: Inputs):
                                      selected=[str(a) for a in alphas2 if str(a) in input.alphas_y()])
 
         bootstrap_methods = ['PB', 'BB', 'BCa', 'BC', 'B-n', 'SB', 'DB', 'B-t']
-        other_methods = {'mean': ['wilcoxon', 't-test'], 'std': ['chi-sq'],
+        other_methods = {'mean': ['wilcoxon', 't-test', 'agresti_coull', 'clopper_pearson'], 'std': ['chi-sq'],
                          'median': ['wilcoxon', 'q-par', 'q-nonpar', 'm-j'],
                          'Q(0.05)': ['q-par', 'q-nonpar', 'm-j'],
                          'Q(0.95)': ['q-par', 'q-nonpar', 'm-j'],
@@ -212,18 +212,26 @@ def server(input: Inputs):
 
         # setting correct methods for each functional
         if 'Statistic' not in [input.xgrid(), input.ygrid()]:
-
+            
             possible_methods = bootstrap_methods + other_methods[input.statistic()]
 
             # setting correct distributions for selected statistic
-            possible_dist = [d for d in distributions if d[:9] != 'DGPBiNorm'] if input.statistic() != 'corr' else \
-                [d for d in distributions if d[:9] == 'DGPBiNorm']
+            if input.statistic() == 'corr':
+                possible_dist = [d for d in distributions if d[:9] == 'DGPBiNorm']
+            elif input.statistic() == 'mean':
+                possible_dist = [d for d in distributions if d[:9] != 'DGPBiNorm']
+            else:
+                possible_dist = [d for d in distributions if d[:9] not in ['DGPBiNorm', 'DGPBernou']]
             selected_dist_possible = input.distribution() in possible_dist
             ui.update_selectize('distribution', choices=possible_dist,
                                 selected=input.distribution() if selected_dist_possible else possible_dist[0])
 
         else:
             stats = input.statistics_x() if 'Statistic' == input.xgrid() else input.statistics_y()
+            if input.distribution()[:12] == 'DGPBernoulli':
+                other_methods['mean'] = ['t-test', 'agresti_coull', 'clopper_pearson']
+            else:
+                other_methods['mean'] = ['wilcoxon', 't-test']
             possible_methods = bootstrap_methods + list(itertools.chain(*[other_methods[s] for s in stats]))
 
         selected_methods = input.methods()
