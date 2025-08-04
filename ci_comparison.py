@@ -14,9 +14,12 @@ import matplotlib.pyplot as plt
 from collections import defaultdict
 import seaborn as sns
 import matplotlib.pyplot as plt
+import warnings
 
 import bootstrap_ci as boot
-from generators import DGP, DGPNorm, DGPExp, DGPBeta, DGPBiNorm, DGPLogNorm, DGPLaplace, DGPRandEff
+from generators import DGP, DGPNorm, DGPExp, DGPBeta, DGPBiNorm, DGPLogNorm, DGPLaplace, DGPRandEff, DGPBernoulli
+
+from statsmodels.stats.proportion import proportion_confint
 
 # TODO set correct R folder
 os.environ['R_HOME'] = "C:/Users/ursau/anaconda3/envs/bootstrap/Lib/R"
@@ -135,7 +138,7 @@ class CompareIntervals:
         :param data: array containing one sample
         """
         ci = defaultdict(list)
-        new_methods = {'mean': ['wilcoxon', 'ttest'],
+        new_methods = {'mean': ['wilcoxon', 'ttest', 'agresti_coull', 'clopper_pearson'],
                        'median': ['wilcoxon', 'ci_quant_param', 'ci_quant_nonparam', 'maritz-jarrett'],
                        'std': ['chi_sq'], 'percentile': ['ci_quant_param', 'ci_quant_nonparam', 'maritz-jarrett'],
                        'corr': ['ci_corr_pearson']}
@@ -205,6 +208,42 @@ class CompareIntervals:
                 t = time.time()
                 res = scipy.stats.pearsonr(data[:, 0], data[:, 1], alternative='less')
                 ci[method] = [res.confidence_interval(a).high for a in self.alphas]
+                self.times[method].append(time.time() - t)
+
+            elif method == 'agresti_coull':
+                t = time.time()
+                ci_results = []
+                for a in self.alphas:
+                    with warnings.catch_warnings():
+                        warnings.simplefilter('ignore', RuntimeWarning)
+                        if a <= 0.5:
+                            ci_two_sided = proportion_confint(
+                                count=np.sum(data), nobs=self.n, alpha=2*a, method='agresti_coull')
+                            ci_results.append(ci_two_sided[0])
+                        else:
+                            ci_two_sided = proportion_confint(
+                                count=np.sum(data), nobs=self.n, alpha=2*(1-a), method='agresti_coull')
+                            ci_results.append(ci_two_sided[1])
+                ci[method] = ci_results
+                self.times[method].append(time.time() - t)
+
+            elif method == 'clopper_pearson':
+                t = time.time()
+                ci_results = []
+                for a in self.alphas:
+                    with warnings.catch_warnings():
+                        warnings.simplefilter('ignore', RuntimeWarning)
+                        if a <= 0.5:
+                            # Take upper bound with doubled alpha
+                            ci_two_sided = proportion_confint(
+                                count=np.sum(data), nobs=self.n, alpha=2*a, method='beta')
+                            ci_results.append(ci_two_sided[0])  # lower bound
+                        else:
+                            # Take lower bound with adjusted alpha
+                            ci_two_sided = proportion_confint(
+                                count=np.sum(data), nobs=self.n, alpha=2*(1-a), method='beta')
+                            ci_results.append(ci_two_sided[1])  # upper bound
+                ci[method] = ci_results
                 self.times[method].append(time.time() - t)
 
         for m in ci.keys():
@@ -510,7 +549,8 @@ def run_comparison(dgps, statistics, Bs, methods, alphas, repetitions, ns=None, 
         for statistic in statistics:
             if (statistic.__name__ == 'corr' and type(dgp).__name__ != 'DGPBiNorm') or \
                     (type(dgp).__name__ == 'DGPBiNorm' and statistic.__name__ != 'corr') or \
-                    (type(dgp).__name__ == 'DGPCategorical' and statistic.__name__ == 'std'):
+                    (type(dgp).__name__ == 'DGPCategorical' and statistic.__name__ == 'std') or \
+                    (type(dgp).__name__ == 'DGPBernoulli' and statistic.__name__ != 'mean'):
                 continue
 
             for n in ns:
@@ -639,7 +679,8 @@ if __name__ == '__main__':
 
     dgps = [DGPNorm(seed, 0, 1), DGPExp(seed, 1), DGPBeta(seed, 1, 1), DGPBeta(seed, 10, 2),
             DGPLaplace(seed, 0, 1), DGPLogNorm(seed, 0, 1),
-            DGPBiNorm(seed, np.array([1, 1]), np.array([[2, 0.5], [0.5, 1]]))]
+            DGPBiNorm(seed, np.array([1, 1]), np.array([[2, 0.5], [0.5, 1]])),
+            DGPBernoulli(seed, 0.5), DGPBernoulli(seed, 0.9)]
     statistics = [np.mean, np.median, np.std, percentile_5, percentile_95, corr]
 
     ns = [4, 8, 16, 32, 64, 128, 256]

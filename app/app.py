@@ -204,7 +204,7 @@ def server(input: Inputs):
                                      selected=[str(a) for a in alphas2 if str(a) in input.alphas_y()])
 
         bootstrap_methods = ['PB', 'BB', 'BCa', 'BC', 'B-n', 'SB', 'DB', 'B-t']
-        other_methods = {'mean': ['wilcoxon', 't-test', 'agresti_coull', 'clopper_pearson'], 'std': ['chi-sq'],
+        other_methods = {'mean': ['wilcoxon', 't-test'], 'std': ['chi-sq'],
                          'median': ['wilcoxon', 'q-par', 'q-nonpar', 'm-j'],
                          'Q(0.05)': ['q-par', 'q-nonpar', 'm-j'],
                          'Q(0.95)': ['q-par', 'q-nonpar', 'm-j'],
@@ -212,8 +212,17 @@ def server(input: Inputs):
 
         # setting correct methods for each functional
         if 'Statistic' not in [input.xgrid(), input.ygrid()]:
-            
-            possible_methods = bootstrap_methods + other_methods[input.statistic()]
+
+            # Check if current distribution is Bernoulli
+            current_dist = input.distribution()
+            if current_dist.startswith('DGPBernoulli'):
+                # For Bernoulli distributions, only show t-test, agresti_coull, clopper_pearson for mean
+                if input.statistic() == 'mean':
+                    possible_methods = bootstrap_methods + ['t-test', 'a-c', 'c-p']
+                else:
+                    possible_methods = bootstrap_methods + other_methods[input.statistic()]
+            else:
+                possible_methods = bootstrap_methods + other_methods[input.statistic()]
 
             # setting correct distributions for selected statistic
             if input.statistic() == 'corr':
@@ -221,18 +230,25 @@ def server(input: Inputs):
             elif input.statistic() == 'mean':
                 possible_dist = [d for d in distributions if d[:9] != 'DGPBiNorm']
             else:
-                possible_dist = [d for d in distributions if d[:9] not in ['DGPBiNorm', 'DGPBernou']]
+                possible_dist = [d for d in distributions if d[:9] != 'DGPBiNorm' and not d.startswith('DGPBernoulli')]
+            
             selected_dist_possible = input.distribution() in possible_dist
             ui.update_selectize('distribution', choices=possible_dist,
                                 selected=input.distribution() if selected_dist_possible else possible_dist[0])
 
         else:
             stats = input.statistics_x() if 'Statistic' == input.xgrid() else input.statistics_y()
-            if input.distribution()[:12] == 'DGPBernoulli':
-                other_methods['mean'] = ['t-test', 'agresti_coull', 'clopper_pearson']
-            else:
-                other_methods['mean'] = ['wilcoxon', 't-test']
-            possible_methods = bootstrap_methods + list(itertools.chain(*[other_methods[s] for s in stats]))
+            
+            # Check if any Bernoulli distributions are selected in the grid
+            selected_dists = input.distributions_x() if 'Distribution' == input.xgrid() else input.distributions_y()
+            has_bernoulli = any(d.startswith('DGPBernoulli') for d in selected_dists)
+            
+            # Create a copy of other_methods to modify
+            grid_methods = other_methods.copy()
+            if has_bernoulli and 'mean' in stats:
+                grid_methods['mean'] = ['t-test', 'a-c', 'c-p']
+                
+            possible_methods = bootstrap_methods + list(itertools.chain(*[grid_methods[s] for s in stats]))
 
         selected_methods = input.methods()
         ui.update_checkbox_group('methods', choices=possible_methods,
@@ -281,7 +297,10 @@ def server(input: Inputs):
             w = 1000
         else:
             if input.xgrid() == 'Statistic':
-                w = len(input.statistics_x()) * 500
+                if input.distribution()[:12] == 'DGPBernoulli':
+                    w = 1000
+                else:
+                    w = len(input.statistics_x()) * 500
             elif input.xgrid() == 'Confidence level':
                 w = len(input.alphas_x()) * 500
             else:
